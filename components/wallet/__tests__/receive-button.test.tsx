@@ -13,10 +13,11 @@ import {
   NostrContext,
   SignerContext,
 } from "@/components/utility-components/nostr-context-provider";
-import { getDecodedToken, CashuWallet } from "@cashu/cashu-ts";
+import { getDecodedToken, Wallet as CashuWallet } from "@cashu/cashu-ts";
 import {
   getLocalStorageData,
   publishProofEvent,
+  publishWalletEvent,
 } from "@/utils/nostr/nostr-helper-functions";
 import { NostrNIP46Signer } from "@/utils/nostr/signers/nostr-nip46-signer";
 
@@ -25,11 +26,13 @@ jest.setTimeout(15000);
 jest.mock("@/utils/nostr/nostr-helper-functions", () => ({
   getLocalStorageData: jest.fn(),
   publishProofEvent: jest.fn(),
+  publishWalletEvent: jest.fn(),
 }));
 jest.mock("@cashu/cashu-ts", () => ({
   ...jest.requireActual("@cashu/cashu-ts"),
   getDecodedToken: jest.fn(),
-  CashuWallet: jest.fn().mockImplementation(() => ({
+  Wallet: jest.fn().mockImplementation(() => ({
+    loadMint: jest.fn().mockResolvedValue(undefined),
     checkProofsStates: jest.fn(),
   })),
 }));
@@ -44,6 +47,7 @@ jest.mock("@heroicons/react/24/outline", () => ({
 const mockGetLocalStorageData = getLocalStorageData as jest.Mock;
 const mockGetDecodedToken = getDecodedToken as jest.Mock;
 const mockPublishProofEvent = publishProofEvent as jest.Mock;
+const mockPublishWalletEvent = publishWalletEvent as jest.Mock;
 const MockCashuWallet = CashuWallet as jest.Mock;
 const mockSigner = {
   connect: jest.fn(),
@@ -82,6 +86,7 @@ describe("ReceiveButton", () => {
       history: [],
     });
     mockPublishProofEvent.mockResolvedValue(undefined);
+    mockPublishWalletEvent.mockResolvedValue(undefined);
   });
 
   test("renders the receive button and opens/closes the modal", async () => {
@@ -134,6 +139,7 @@ describe("ReceiveButton", () => {
       proofs: mockProofs,
     });
     MockCashuWallet.mockImplementation(() => ({
+      loadMint: jest.fn().mockResolvedValue(undefined),
       checkProofsStates: jest
         .fn()
         .mockResolvedValue([{ state: "UNSPENT", Y: "Y1" }]),
@@ -171,6 +177,7 @@ describe("ReceiveButton", () => {
       proofs: [{ id: "test", amount: 10 }],
     });
     MockCashuWallet.mockImplementation(() => ({
+      loadMint: jest.fn().mockResolvedValue(undefined),
       checkProofsStates: jest
         .fn()
         .mockResolvedValue([{ state: "SPENT", Y: "Y1" }]),
@@ -211,6 +218,7 @@ describe("ReceiveButton", () => {
       proofs: [mockProof],
     });
     MockCashuWallet.mockImplementation(() => ({
+      loadMint: jest.fn().mockResolvedValue(undefined),
       checkProofsStates: jest
         .fn()
         .mockResolvedValue([{ state: "UNSPENT", Y: "Y1" }]),

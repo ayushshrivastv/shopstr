@@ -11,6 +11,13 @@ import {
 } from "@/utils/mcp/auth";
 import { recordRequest } from "@/utils/mcp/metrics";
 import { registerWriteTools } from "@/mcp/tools/write-tools";
+import { applyRateLimit } from "@/utils/rate-limit";
+
+// MCP protocol entry — high per-IP cap for legitimate session traffic, with
+// a tighter per-key cap so a single compromised credential cannot exhaust
+// the connection pool.
+const RATE_LIMIT = { limit: 600, windowMs: 60 * 1000 };
+const PER_KEY_LIMIT = { limit: 300, windowMs: 60 * 1000 };
 
 let tablesReady = false;
 
@@ -56,7 +63,7 @@ function registerPurchaseTools(
 
   server.tool(
     "create_order",
-    "Place an order for a product. Supports Bitcoin payment methods: lightning (Bitcoin Lightning invoice) or cashu (ecash tokens). Supports selecting product specifications (size, volume, bulk bundle) and providing a shipping address. Requires read_write API key permission.",
+    "Place an order for a product. Supports Bitcoin payment methods: lightning (Bitcoin Lightning invoice) or cashu (ecash tokens). Supports selecting product specifications (size, volume, weight, bulk bundle) and providing a shipping address. Requires read_write API key permission.",
     {
       productId: z.string().describe("The product event ID to purchase"),
       quantity: z.number().optional().describe("Quantity to order (default 1)"),
@@ -71,6 +78,12 @@ function registerPurchaseTools(
         .optional()
         .describe(
           "Selected volume/variant option (must match a volume defined on the product). Overrides base price."
+        ),
+      selectedWeight: z
+        .string()
+        .optional()
+        .describe(
+          "Selected weight option (must match a weight defined on the product, e.g. '1 oz', '1 lb'). Overrides base price."
         ),
       selectedBulkUnits: z
         .number()
@@ -113,6 +126,7 @@ function registerPurchaseTools(
       quantity,
       selectedSize,
       selectedVolume,
+      selectedWeight,
       selectedBulkUnits,
       shippingAddress,
       discountCode,
@@ -139,6 +153,7 @@ function registerPurchaseTools(
             quantity: quantity || 1,
             selectedSize,
             selectedVolume,
+            selectedWeight,
             selectedBulkUnits,
             shippingAddress,
             discountCode,
@@ -361,9 +376,8 @@ function registerPurchaseTools(
       const startTime = Date.now();
 
       try {
-        const { fetchAllProfilesFromDb } = await import(
-          "@/utils/db/db-service"
-        );
+        const { fetchAllProfilesFromDb } =
+          await import("@/utils/db/db-service");
         const profiles = await fetchAllProfilesFromDb();
         const profile = profiles.find(
           (p: any) =>
@@ -581,9 +595,8 @@ function registerPurchaseTools(
         return permissionError();
 
       try {
-        const { listMcpOrdersAsSeller, formatOrderForResponse } = await import(
-          "@/mcp/tools/purchase-tools"
-        );
+        const { listMcpOrdersAsSeller, formatOrderForResponse } =
+          await import("@/mcp/tools/purchase-tools");
 
         let orders = await listMcpOrdersAsSeller(
           apiKey.pubkey,
@@ -640,6 +653,12 @@ export default async function handler(
   res: NextApiResponse
 ) {
   const requestStart = Date.now();
+
+  if (!applyRateLimit(req, res, "mcp-protocol:ip", RATE_LIMIT)) {
+    recordRequest(Date.now() - requestStart, false);
+    return;
+  }
+
   await ensureTables();
 
   const token = extractBearerToken(req);
@@ -663,6 +682,19 @@ export default async function handler(
       error: { code: -32000, message: "Invalid or revoked API key" },
       id: null,
     });
+  }
+
+  if (
+    !applyRateLimit(
+      req,
+      res,
+      "mcp-protocol:key",
+      PER_KEY_LIMIT,
+      String(apiKey.id)
+    )
+  ) {
+    recordRequest(Date.now() - requestStart, false);
+    return;
   }
 
   res.setHeader("X-Response-Time-Start", requestStart.toString());

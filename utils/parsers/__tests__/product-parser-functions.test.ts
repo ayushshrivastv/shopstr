@@ -7,6 +7,13 @@ jest.mock("@/components/utility-components/display-monetary-info", () => ({
 }));
 
 const mockedCalculateTotalCost = calculateTotalCost as jest.Mock;
+const totalCostWithoutShipping = ({
+  price,
+  shippingCost,
+}: {
+  price: number;
+  shippingCost?: number;
+}) => price + (shippingCost ?? 0);
 
 describe("parseTags", () => {
   const baseEvent: NostrEvent = {
@@ -78,20 +85,72 @@ describe("parseTags", () => {
     expect(result.shippingCost).toBe(10);
   });
 
-  it("should parse the legacy 2-value shipping tag", () => {
-    const event = { ...baseEvent, tags: [["shipping", "5", "USD"]] };
+  it("should ignore legacy 2-value shipping tags", () => {
+    mockedCalculateTotalCost.mockImplementation(totalCostWithoutShipping);
+
+    const event = {
+      ...baseEvent,
+      tags: [
+        ["price", "50", "USD"],
+        ["shipping", "5", "USD"],
+      ],
+    };
     const result = parseTags(event)!;
 
-    expect(result.shippingType).toBe("Added Cost");
-    expect(result.shippingCost).toBe(5);
+    expect(result.shippingType).toBeUndefined();
+    expect(result.shippingCost).toBeUndefined();
+    expect(result.totalCost).toBe(50);
   });
 
-  it("should parse the simple 1-value shipping tag", () => {
-    const event = { ...baseEvent, tags: [["shipping", "Free"]] };
+  it("should ignore legacy 1-value shipping tags", () => {
+    mockedCalculateTotalCost.mockImplementation(totalCostWithoutShipping);
+
+    const event = {
+      ...baseEvent,
+      tags: [
+        ["price", "50", "USD"],
+        ["shipping", "Free"],
+      ],
+    };
     const result = parseTags(event)!;
 
-    expect(result.shippingType).toBe("Free");
-    expect(result.shippingCost).toBe(0);
+    expect(result.shippingType).toBeUndefined();
+    expect(result.shippingCost).toBeUndefined();
+    expect(result.totalCost).toBe(50);
+  });
+
+  it("should ignore malformed modern shipping tags with non-numeric cost", () => {
+    mockedCalculateTotalCost.mockImplementation(totalCostWithoutShipping);
+
+    const event = {
+      ...baseEvent,
+      tags: [
+        ["price", "50", "USD"],
+        ["shipping", "Added Cost", "not-a-number", "USD"],
+      ],
+    };
+    const result = parseTags(event)!;
+
+    expect(result.shippingType).toBeUndefined();
+    expect(result.shippingCost).toBeUndefined();
+    expect(result.totalCost).toBe(50);
+  });
+
+  it("should ignore malformed modern shipping tags with negative cost", () => {
+    mockedCalculateTotalCost.mockImplementation(totalCostWithoutShipping);
+
+    const event = {
+      ...baseEvent,
+      tags: [
+        ["price", "50", "USD"],
+        ["shipping", "Added Cost", "-10", "USD"],
+      ],
+    };
+    const result = parseTags(event)!;
+
+    expect(result.shippingType).toBeUndefined();
+    expect(result.shippingCost).toBeUndefined();
+    expect(result.totalCost).toBe(50);
   });
 
   it("should parse various content-warning tags as true", () => {
@@ -180,6 +239,30 @@ describe("parseTags", () => {
 
     expect(result.volumes).toEqual(["100g"]);
     expect(result.volumePrices!.get("100g")).toBeUndefined();
+  });
+
+  it("should parse weight tags into weights array and prices map", () => {
+    const event = {
+      ...baseEvent,
+      tags: [
+        ["weight", "1 oz", "10"],
+        ["weight", "1 lb", "80"],
+      ],
+    };
+    const result = parseTags(event)!;
+
+    expect(result.weights).toEqual(["1 oz", "1 lb"]);
+    expect(result.weightPrices).toBeInstanceOf(Map);
+    expect(result.weightPrices!.get("1 oz")).toBe(10);
+    expect(result.weightPrices!.get("1 lb")).toBe(80);
+  });
+
+  it("should handle a weight tag without a price", () => {
+    const event = { ...baseEvent, tags: [["weight", "1 oz"]] };
+    const result = parseTags(event)!;
+
+    expect(result.weights).toEqual(["1 oz"]);
+    expect(result.weightPrices!.get("1 oz")).toBeUndefined();
   });
 
   it("should ignore L/l tags that are not for content-warning", () => {
