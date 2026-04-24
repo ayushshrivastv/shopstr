@@ -206,28 +206,55 @@ npm run lint-all
 
 ## Testing
 
+Shopstr uses Jest for unit and integration-style tests across UI components,
+Nostr helpers, parser logic, API handlers, and cache-related flows. Existing
+tests can be found in directories such as:
+
+- `utils/nostr/__tests__/`
+- `utils/parsers/__tests__/`
+- `components/utility-components/__tests__/`
+- `pages/api/db/__tests__/`
+
 ### 1. Run Tests
 
 ```bash
 # Run all tests
 npm test
 
-# Run the CI test command locally
+# Run the CI-style Jest command locally
 npm run test:ci
+# or
+npm test -- --ci
 
 # Run tests with coverage thresholds
 npm run test:coverage
+# or
+npm test -- --coverage
 
 # Run tests in watch mode during development
 npm run test:watch
 ```
 
-### 2. Writing Tests
+### 2. Run a Focused Test
+
+To test a single module or focused test file, use `--runTestsByPath`:
+
+```bash
+npm test -- --runTestsByPath utils/nostr/__tests__/nostr-helper-functions.test.ts
+```
+
+Use focused tests while developing a change, then run the full suite before
+opening a pull request.
+
+### 3. Writing Tests
 
 - Write tests for new features and bug fixes
 - Place test files next to the components they test or in a `__tests__` directory
 - Use descriptive test names
 - Follow existing test patterns
+- When changing Nostr helpers, search, reporting, parser logic, cache behavior,
+  wallet flows, or API handlers, add or update focused tests near the changed
+  module.
 - See `TESTING.md` for CI coverage expectations and the high-risk modules that
   currently define the enforced threshold.
 
