@@ -118,6 +118,8 @@ jest.mock("@heroicons/react/24/outline", () => ({
   ArrowRightStartOnRectangleIcon: () => <div data-testid="icon-logout" />,
   ClipboardIcon: () => <div data-testid="icon-clipboard" />,
   CheckIcon: () => <div data-testid="icon-check" />,
+  ExclamationTriangleIcon: () => <div data-testid="icon-report" />,
+  CheckCircleIcon: () => <div data-testid="icon-success" />,
 }));
 
 Object.defineProperty(navigator, "clipboard", {
@@ -175,6 +177,11 @@ describe("ProfileWithDropdown", () => {
     });
   });
 
+  afterEach(() => {
+    jest.runOnlyPendingTimers();
+    jest.useRealTimers();
+  });
+
   it("renders with fallback data and correct dropdown items", () => {
     renderWithProviders(
       <ProfileWithDropdown pubkey={pubkey} dropDownKeys={["shop", "logout"]} />,
@@ -206,6 +213,7 @@ describe("ProfileWithDropdown", () => {
   });
 
   it('handles "Visit Seller" click', () => {
+    jest.useFakeTimers();
     renderWithProviders(
       <ProfileWithDropdown pubkey={pubkey} dropDownKeys={["shop"]} />,
       {}
@@ -214,11 +222,15 @@ describe("ProfileWithDropdown", () => {
     openDropdownMenu();
 
     fireEvent.click(screen.getByText("Visit Seller"));
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
     expect(mockRouterPush).toHaveBeenCalledWith(`/marketplace/${npub}`);
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
   it('handles "Shop Profile" click', () => {
+    jest.useFakeTimers();
     renderWithProviders(
       <ProfileWithDropdown pubkey={pubkey} dropDownKeys={["shop_profile"]} />,
       {}
@@ -227,10 +239,14 @@ describe("ProfileWithDropdown", () => {
     openDropdownMenu();
 
     fireEvent.click(screen.getByText("Shop Profile"));
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
     expect(mockRouterPush).toHaveBeenCalledWith("/settings/shop-profile");
   });
 
   it('handles "Send Inquiry" click when logged in', () => {
+    jest.useFakeTimers();
     renderWithProviders(
       <ProfileWithDropdown pubkey={pubkey} dropDownKeys={["inquiry"]} />,
       { isLoggedIn: true }
@@ -239,6 +255,9 @@ describe("ProfileWithDropdown", () => {
     openDropdownMenu();
 
     fireEvent.click(screen.getByText("Send Inquiry"));
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
     expect(mockRouterPush).toHaveBeenCalledWith({
       pathname: "/orders",
       query: { pk: npub, isInquiry: true },
@@ -247,6 +266,7 @@ describe("ProfileWithDropdown", () => {
   });
 
   it('handles "Send Inquiry" click when logged out', () => {
+    jest.useFakeTimers();
     renderWithProviders(
       <ProfileWithDropdown pubkey={pubkey} dropDownKeys={["inquiry"]} />,
       { isLoggedIn: false }
@@ -255,11 +275,15 @@ describe("ProfileWithDropdown", () => {
     openDropdownMenu();
 
     fireEvent.click(screen.getByText("Send Inquiry"));
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
     expect(mockOnOpen).toHaveBeenCalled();
     expect(mockRouterPush).not.toHaveBeenCalled();
   });
 
   it('handles "Profile" click', () => {
+    jest.useFakeTimers();
     renderWithProviders(
       <ProfileWithDropdown pubkey={pubkey} dropDownKeys={["user_profile"]} />,
       {}
@@ -268,10 +292,14 @@ describe("ProfileWithDropdown", () => {
     openDropdownMenu();
 
     fireEvent.click(screen.getByText("Profile"));
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
     expect(mockRouterPush).toHaveBeenCalledWith("/settings/user-profile");
   });
 
   it('handles "Settings" click', () => {
+    jest.useFakeTimers();
     renderWithProviders(
       <ProfileWithDropdown pubkey={pubkey} dropDownKeys={["settings"]} />,
       {}
@@ -280,10 +308,14 @@ describe("ProfileWithDropdown", () => {
     openDropdownMenu();
 
     fireEvent.click(screen.getByText("Settings"));
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
     expect(mockRouterPush).toHaveBeenCalledWith("/settings");
   });
 
   it('handles "Log Out" click', () => {
+    jest.useFakeTimers();
     renderWithProviders(
       <ProfileWithDropdown pubkey={pubkey} dropDownKeys={["logout"]} />,
       {}
@@ -292,6 +324,9 @@ describe("ProfileWithDropdown", () => {
     openDropdownMenu();
 
     fireEvent.click(screen.getByText("Log Out"));
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
     expect(LogOut).toHaveBeenCalled();
     expect(mockRouterPush).toHaveBeenCalledWith("/marketplace");
   });
@@ -310,6 +345,9 @@ describe("ProfileWithDropdown", () => {
     expect(screen.queryByTestId("icon-check")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Copy npub"));
+    act(() => {
+      jest.advanceTimersByTime(0);
+    });
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(npub);
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
@@ -322,12 +360,24 @@ describe("ProfileWithDropdown", () => {
     });
 
     act(() => {
-      jest.runAllTimers();
+      jest.advanceTimersByTime(2100);
     });
 
     expect(screen.getByTestId("icon-clipboard")).toBeInTheDocument();
     expect(screen.queryByTestId("icon-check")).not.toBeInTheDocument();
 
     jest.useRealTimers();
+  });
+
+  it('renders "Report Profile" when requested', () => {
+    renderWithProviders(
+      <ProfileWithDropdown pubkey={pubkey} dropDownKeys={["report_profile"]} />,
+      { isLoggedIn: true }
+    );
+
+    openDropdownMenu();
+
+    expect(screen.getByText("Report Profile")).toBeInTheDocument();
+    expect(screen.getByTestId("icon-report")).toBeInTheDocument();
   });
 });

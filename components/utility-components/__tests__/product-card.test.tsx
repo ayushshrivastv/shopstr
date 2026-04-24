@@ -41,6 +41,11 @@ jest.mock("../dropdowns/location-dropdown", () => ({
 
 jest.mock("@heroui/react", () => ({
   ...jest.requireActual("@heroui/react"),
+  useDisclosure: () => ({
+    isOpen: false,
+    onOpen: jest.fn(),
+    onClose: jest.fn(),
+  }),
   Chip: ({ children, startContent }: any) => (
     <div>
       {startContent}
@@ -200,7 +205,7 @@ describe("ProductCard", () => {
       );
       const dropdown = screen.getByTestId("profile-dropdown");
       const keys = JSON.parse(dropdown.getAttribute("data-keys")!);
-      expect(keys).toEqual(["shop", "inquiry", "copy_npub"]);
+      expect(keys).toEqual(["shop", "inquiry", "copy_npub", "report_profile"]);
     });
 
     it("shows sold status correctly", () => {
