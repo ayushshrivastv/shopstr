@@ -1,10 +1,116 @@
-import { fetchReports } from "../fetch-service";
+import { NostrEvent, NostrManager } from "../nostr-manager";
+import {
+  buildNip50ProductSearchFilters,
+  dedupeProductEvents,
+  fetchNip50ProductSearch,
+  fetchReports,
+} from "../fetch-service";
 
 jest.mock("@/utils/db/db-client", () => ({
   cacheEventsToDatabase: jest.fn().mockResolvedValue(undefined),
 }));
 
 const { cacheEventsToDatabase } = jest.requireMock("@/utils/db/db-client");
+
+describe("fetch-service NIP-50 search helpers", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("builds NIP-50 search filters for marketplace listings and flash sales", () => {
+    expect(
+      buildNip50ProductSearchFilters("  cold   brew  ", {
+        authors: ["seller-1"],
+        limit: 25,
+      })
+    ).toEqual([
+      {
+        kinds: [30402],
+        search: "cold brew",
+        limit: 25,
+        authors: ["seller-1"],
+      },
+      {
+        kinds: [1],
+        "#t": ["shopstr-zapsnag", "zapsnag"],
+        search: "cold brew",
+        limit: 25,
+        authors: ["seller-1"],
+      },
+    ]);
+  });
+
+  it("deduplicates replaceable listing events by address and keeps the latest version", () => {
+    const older = {
+      id: "older",
+      pubkey: "seller-1",
+      created_at: 10,
+      kind: 30402,
+      tags: [["d", "coffee"]],
+      content: "old coffee",
+      sig: "sig-older",
+    };
+    const newer = {
+      ...older,
+      id: "newer",
+      created_at: 20,
+      content: "new coffee",
+      sig: "sig-newer",
+    };
+
+    expect(dedupeProductEvents([older, newer] as NostrEvent[])).toEqual([
+      newer,
+    ]);
+  });
+
+  it("fetches NIP-50 product results, deduplicates them, and caches valid events", async () => {
+    const older = {
+      id: "older",
+      pubkey: "seller-1",
+      created_at: 10,
+      kind: 30402,
+      tags: [["d", "coffee"]],
+      content: "old coffee",
+      sig: "sig-older",
+    };
+    const newer = {
+      ...older,
+      id: "newer",
+      created_at: 20,
+      content: "new coffee",
+      sig: "sig-newer",
+    };
+    const invalid = {
+      id: "",
+      pubkey: "seller-2",
+      created_at: 30,
+      kind: 30402,
+      tags: [["d", "tea"]],
+      content: "tea",
+      sig: "sig-invalid",
+    };
+    const nostr = {
+      fetch: jest.fn().mockResolvedValue([older, newer, invalid]),
+    };
+
+    const result = await fetchNip50ProductSearch(
+      nostr as unknown as NostrManager,
+      ["wss://relay.example"],
+      "coffee"
+    );
+
+    expect(nostr.fetch).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ kinds: [30402], search: "coffee" }),
+        expect.objectContaining({ kinds: [1], search: "coffee" }),
+      ]),
+      {},
+      ["wss://relay.example"]
+    );
+    expect(result.productEvents).toEqual([newer]);
+    expect(cacheEventsToDatabase).toHaveBeenCalledWith([older, newer]);
+  });
+});
 
 describe("fetch-service report helpers", () => {
   beforeEach(() => {
@@ -315,10 +421,7 @@ describe("fetchAllPosts", () => {
       new Set(["seller", "zapsnag-seller"])
     );
     expect(editProductContext).toHaveBeenLastCalledWith(productEvents, false);
-    expect(cacheEventsToDatabase).toHaveBeenCalledWith([
-      newerRelayListing,
-      relayNoteListing,
-    ]);
+    expect(cacheEventsToDatabase).toHaveBeenCalledWith([newerRelayListing]);
   });
 });
 

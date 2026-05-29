@@ -39,6 +39,108 @@ interface NipProfile {
   nip05Verified: boolean;
 }
 
+type SearchFilter = Filter & { search: string };
+
+const PRODUCT_SEARCH_LIMIT = 100;
+
+export function getProductEventKey(event: NostrEvent): string {
+  if (event.kind === 30402) {
+    const dTag = event.tags?.find((tag: string[]) => tag[0] === "d")?.[1];
+    if (dTag) return `${event.kind}:${event.pubkey}:${dTag}`;
+  }
+
+  return `${event.kind}:${event.id}`;
+}
+
+export function dedupeProductEvents(events: NostrEvent[]): NostrEvent[] {
+  const eventMap = new Map<string, NostrEvent>();
+  const orderedKeys: string[] = [];
+
+  for (const event of events) {
+    if (!event?.id) continue;
+
+    const key = getProductEventKey(event);
+    const existing = eventMap.get(key);
+
+    if (!existing) {
+      orderedKeys.push(key);
+      eventMap.set(key, event);
+      continue;
+    }
+
+    if ((event.created_at ?? 0) >= (existing.created_at ?? 0)) {
+      eventMap.set(key, event);
+    }
+  }
+
+  return orderedKeys
+    .map((key) => eventMap.get(key))
+    .filter((event): event is NostrEvent => !!event);
+}
+
+export function buildNip50ProductSearchFilters(
+  searchQuery: string,
+  options: { authors?: string[]; limit?: number } = {}
+): SearchFilter[] {
+  const search = searchQuery.trim().replace(/\s+/g, " ");
+  if (!search) return [];
+
+  const limit = options.limit ?? PRODUCT_SEARCH_LIMIT;
+  const baseFilter = {
+    search,
+    limit,
+    ...(options.authors?.length ? { authors: options.authors } : {}),
+  };
+
+  return [
+    {
+      ...baseFilter,
+      kinds: [30402],
+    },
+    {
+      ...baseFilter,
+      kinds: [1],
+      "#t": ["shopstr-zapsnag", "zapsnag"],
+    },
+  ];
+}
+
+export async function fetchNip50ProductSearch(
+  nostr: NostrManager,
+  relays: string[],
+  searchQuery: string,
+  options: { authors?: string[]; limit?: number } = {}
+): Promise<{
+  productEvents: NostrEvent[];
+}> {
+  const filters = buildNip50ProductSearchFilters(searchQuery, options);
+  if (!filters.length || !relays.length) {
+    return { productEvents: [] };
+  }
+
+  const fetchedEvents = await nostr.fetch(filters, {}, relays);
+  const searchProductEvents = fetchedEvents.filter(
+    (event) =>
+      event.id &&
+      event.sig &&
+      event.pubkey &&
+      (event.kind === 30402 || event.kind === 1)
+  );
+  const cacheableProductEvents = searchProductEvents.filter(
+    (event) => event.kind === 30402
+  );
+
+  if (cacheableProductEvents.length > 0) {
+    cacheEventsToDatabase(cacheableProductEvents).catch((error) =>
+      console.error("Failed to cache NIP-50 product search events:", error)
+    );
+  }
+
+  return {
+    productEvents: dedupeProductEvents(searchProductEvents),
+  };
+}
+
 function getUniqueProofs(proofs: Proof[]): Proof[] {
   const seenSecrets = new Set<string>();
   return proofs.filter((proof) => {
@@ -69,11 +171,7 @@ export const fetchAllPosts = async (
       const dbProductsMap = new Map<string, NostrEvent>();
 
       const getEventKey = (event: NostrEvent): string => {
-        if (event.kind === 30402) {
-          const dTag = event.tags?.find((tag: string[]) => tag[0] === "d")?.[1];
-          if (dTag) return `${event.pubkey}:${dTag}`;
-        }
-        return event.id;
+        return getProductEventKey(event);
       };
 
       // Cascading DB fetch: load batches one at a time, displaying each as it arrives
@@ -129,7 +227,7 @@ export const fetchAllPosts = async (
 
       // Cache valid product events to database
       const validProductEvents = fetchedEvents.filter(
-        (e) => e.id && e.sig && e.pubkey && (e.kind === 30402 || e.kind === 1)
+        (e) => e.id && e.sig && e.pubkey && e.kind === 30402
       );
       if (validProductEvents.length > 0) {
         cacheEventsToDatabase(validProductEvents).catch((error) =>
